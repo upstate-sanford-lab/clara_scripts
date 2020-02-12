@@ -8,7 +8,7 @@ import json
 class ToClaraFormat:
     '''this class seeks to simplify the process of preparing data for clara train
     -- the format expected by this is a nifti format (.nii or .nii.gz)
-    -- for scripts to help convert to nifti, see github.com/NIH-MIP/anonymize_pipeline
+    -- for scripts to help convert to nifti, see github.com/sanford-upstate
     -- labeling is as follows [img/segmentation] + '_' +[image and seg ID]+'.nii.gz
         -- this labeling scheme is important for sorting into a training and validation dataset
         -- all the data needs to be placed within a single director file called 'all_files'
@@ -16,11 +16,12 @@ class ToClaraFormat:
     random.seed(0)
 
     def __init__(self):
-        self.basepath='/home/tom/clara_experiments/ProstateX_FL_Data' #path to directory that contains files 'all_files'
-        self.clarapath='/workspace/data/ProstateX_FL_Data'
-        self.center='SUNY'
+        self.rootdir='/home/tom/Desktop' #location of raw ProstateX data
+        self.basepath='/home/tom/clara_experiments/prostateX_for_clara' #path to directory that contains files 'all_files'
+        self.clarapath='/workspace/data/prostateX_for_clara'
+        self.center='UCLA'
 
-    def clara_filestructure(self, i_name='Image', s_name='Mask', val_p=0.2, train_val_n=['training', 'validation'],resample=False):
+    def clara_filestructure(self, i_name='img', s_name='seg', val_p=0.2, train_val_n=['training', 'validation'],resample=False):
         '''
         **** must be run within the clara train docker ****
         takes images and labels and splits them into train, val_test and creates .json
@@ -101,9 +102,9 @@ class ToClaraFormat:
     def ProstateX_labeling(self):
         '''copy prostateX to new file properly labeled'''
 
-        basepath='/home/tom/Desktop'
+        basepath=self.rootdir
         prostateX_n='prostateX'
-        savedir='ProstateX_for_clara2'
+        savedir='prostateX_for_clara'
 
         print("copying files")
         for pt in sorted(os.listdir(os.path.join(basepath,prostateX_n))):
@@ -123,7 +124,7 @@ class ToClaraFormat:
     def random_split_by_center(self):
         '''randomply split data into three datasets'''
 
-        basepath='/home/tom/Desktop/ProstateX_for_clara2'
+        basepath=os.path.join(self.rootdir,'prostateX_for_clara')
 
         #split files into three groups randomly
         filelist=[file for file in os.listdir(basepath) if file.split('_')[0]=='img']
@@ -153,7 +154,6 @@ class ToClaraFormat:
             if file.endswith('.nii.gz'):
                 shutil.move(os.path.join(basepath,file),os.path.join(basepath,'leftover',file))
 
-
 ##########helper functions##########3
 def compress_nii(path):
     '''recursively converts .nii files to .nii.gz and removes original .nii file
@@ -178,76 +178,9 @@ def find_file_by_annotator(path='/home/tom/Desktop/prostateX/PEx0000_00000000/ni
             elif file == 'wp_pseg_resampled.nii':return file
             elif file == 'wp_dk_resampled.nii': return file
 
-def interrogate_nifti():
-    img_path='/home/tom/clara_experiments/ProstateX_FL_Data/SUNY/Image_PEx0005.nii.gz'
-    mask='/home/tom/clara_experiments/ProstateX_FL_Data/SUNY/resampled_Mask_PEx0005.nii.gz'
-
-
-    img=nib.load(img_path)
-    print(img.affine)
-    print(img.header)
-    msk=nib.load(mask)
-    print(msk.affine)
-
-
-
-
-def sort_z_resampled():
-
-    path='/home/tom/Desktop/ProstateX_FL_Data'
-
-    for ctr in ['NCI','SUNY','UCLA']:
-        for type in ['Image','Mask']:
-            for file in os.listdir(os.path.join(path,ctr,type)):
-                shutil.move(os.path.join(path,ctr,type,file),os.path.join(path,ctr,type+'_'+file))
-            os.rmdir(os.path.join(path,ctr,type))
-
-def equal_affine():
-
-    path='/home/tom/clara_experiments/ProstateX_FL_Data'
-
-    imglist=[]
-    for ctr in ['SUNY']:
-        print(ctr)
-        for file in os.listdir(os.path.join(path,ctr)):
-            if file.split('_')[0]=='Image':
-                imglist+=[file]
-
-        for img in sorted(imglist):
-            print(img)
-            nii_img = nib.load(os.path.join(path,ctr, img))
-            for file in sorted(os.listdir(os.path.join(path,ctr))):
-                if file.split('_')[0]=='Mask' and file.split('_')[1]==img.split('_')[1]:
-                    print(file)
-                    print("initial affine")
-                    print(nii_img.affine)
-                    mask=nib.load(os.path.join(path,ctr,file))
-                    print("mask affine")
-                    print(mask.affine)
-                    n_mask=nib.Nifti1Image(mask.get_fdata(), nii_img.affine,mask.header)
-                    #os.remove(os.path.join(path,ctr,file))
-                    print("new nifti affine")
-                    print(n_mask.affine)
-                    nib.save(n_mask,os.path.join(path,ctr,'resampled_'+file))
-                    file=nib.load(os.path.join(path,ctr,'resampled_'+file))
-                    print("reloaded mask affine")
-                    print(file.affine)
-
-
-
-
-
-
-
-
-
-
-
-
 
 if __name__=='__main__':
     c=ToClaraFormat()
+    c.ProstateX_labeling()
+    c.random_split_by_center()
     #c.clara_filestructure()
-    #equal_affine()
-    interrogate_nifti()
-    #interrogate_nifti()
