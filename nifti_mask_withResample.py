@@ -1,4 +1,4 @@
-#author @t_sanf
+#author @t_sanf/@sharm
 
 import pandas as pd
 from skimage import draw
@@ -17,8 +17,8 @@ import SimpleITK as sitk
 class VOI_to_nifti_mask(ParseVOI):
 
     def __init__(self):
-        self.anonymize_database = '/home/tom/Desktop/'
-        self.databases=['prostateX']
+        self.anonymize_database = r'M:/Stephanie_Harmon/Projects_MRI/test_new_anon_pipeline'
+        self.databases=['batch4']
         self.resample = True  # this flag will make a directory with resampled images to 1x1x1
 
 
@@ -28,14 +28,14 @@ class VOI_to_nifti_mask(ParseVOI):
         '''
 
         databases=self.databases
-        segmentation_types=['wp']
+        segmentation_types=['wp','tz','PIRADS']
         exception_logger=[]
 
         for database in databases:
             #filelist = sorted(self.check_complete_mask(database))
             filelist = os.listdir(os.path.join(self.anonymize_database, database))
             print('total of {} files left to convert'.format(len(filelist)))
-            for patient_dir in sorted(filelist):
+            for patient_dir in filelist:
                 print("converting files to mask for patient {}".format(patient_dir))
                 voi_files = os.listdir(os.path.join(self.anonymize_database, database, patient_dir, 'voi'))
                 for filetype in segmentation_types:
@@ -108,7 +108,8 @@ class VOI_to_nifti_mask(ParseVOI):
             numpy_mask[:,:,int(key)]=mask_dict[key]
 
         #make directories if needed
-        if not os.path.exists(nifti_dir):os.mkdir(nifti_dir)
+        if not os.path.exists(nifti_dir):
+            os.mkdir(nifti_dir)
 
         if not os.path.exists(mask_dir):
             os.mkdir(mask_dir)
@@ -128,13 +129,20 @@ class VOI_to_nifti_mask(ParseVOI):
             new_size = np.ceil(new_size).astype(np.int)  # Image dimensions are in integers
             new_size = [int(s) for s in new_size]
 
+            #t2 resample
             resample = sitk.ResampleImageFilter()
-            resample.SetInterpolator = sitk.sitkNearestNeighbor
+            resample.SetInterpolator = sitk.sitkLinear
             resample.SetOutputSpacing(new_spacing)
             resample.SetSize(new_size)
-            resample.SetOutputDirection(img_out.GetDirection())
-            resample.SetOutputOrigin(img_out.GetOrigin())
+            resample.SetOutputDirection(image.GetDirection())
+            resample.SetOutputOrigin(image.GetOrigin())
+            image_resamp = resample.Execute(image)
             new_image = resample.Execute(img_out)
+            new_arr = sitk.GetArrayFromImage(new_image)
+            new_arr[new_arr>0]=1
+            new_image = sitk.GetImageFromArray(new_arr)
+            new_image.CopyInformation(image_resamp)
+
             sitk.WriteImage(new_image, type.split('.')[0] + '_resampled.nii')
 
 
@@ -225,5 +233,4 @@ class VOI_to_nifti_mask(ParseVOI):
 if __name__=='__main__':
     c=VOI_to_nifti_mask()
     c.create_masks_all_patients()
-
 
