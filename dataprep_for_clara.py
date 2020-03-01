@@ -12,18 +12,19 @@ class ToClaraFormat:
     -- labeling is as follows [img/segmentation] + '_' +[image and seg ID]+'.nii.gz
         -- this labeling scheme is important for sorting into a training and validation dataset
         -- all the data needs to be placed within a single director file called 'all_files'
+    --assuming the data is already resampled, first execute the sort_data method to get the data into one directory
+    -- then execute the clara_filestructure method
     '''
     random.seed(0)
 
     def __init__(self):
-        self.rootdir='/home/tom/Desktop' #location of raw ProstateX data
-        self.basepath='/home/tom/clara_experiments/prostateX_for_clara' #path to directory that contains files 'all_files'
-        self.clarapath='/workspace/data/prostateX_for_clara'
-        self.center='UCLA'
+        self.rootdir='/home/tom/Documents/clara/data'
+        self.basepath='/home/tom/clara_experiments/data_prostate'            #path to directory that contains files 'all_files'
+        self.clarapath='/workspace/data/data_prostate/'
+        self.center='SUNY_wp_for_clara'
 
     def clara_filestructure(self, i_name='img', s_name='seg', val_p=0.2, train_val_n=['training', 'validation'],resample=False):
         '''
-        **** must be run within the clara train docker ****
         takes images and labels and splits them into train, val_test and creates .json
         note - basepath is the path with the directory 'all_files' within it
         :param i_name: (str) name of image files
@@ -39,15 +40,6 @@ class ToClaraFormat:
         if not os.path.exists(os.path.join(self.basepath, self.center + '_split')):
             os.mkdir(os.path.join(self.basepath, self.center + '_split'))
         s_path=os.path.join(self.basepath, self.center + '_split')
-
-        if resample==True:
-            if not os.path.exists(os.path.join(self.basepath, self.center + '_split','all_files_resampled')):
-                os.mkdir(os.path.join(self.basepath, self.center + '_split','all_files_resampled'))
-            o_path=os.path.join(self.basepath, self.center + '_split','all_files_resampled')
-
-            # resample to 1x1x1 - note, this part must be run within the clara filestructure
-            os.system('nvmidl-dataconvert -d {} -r 1 -s .nii.gz -e .nii.gz -o {}'.format(path, o_path))
-            path=o_path
 
         # find all image files and all segmentation files
         img_dir = []; seg_dir = []
@@ -99,18 +91,26 @@ class ToClaraFormat:
             json.dump(json_d, outfile,indent=2)
 
 
-    def ProstateX_labeling(self):
-        '''copy prostateX to new file properly labeled'''
+    def sort_data(self,anon=True):
+        '''make savedir and sort img and seg files into the savedirectory properly labeled'''
 
         basepath=self.rootdir
-        prostateX_n='prostateX'
-        savedir='prostateX_for_clara'
+        prostateX_n='SUNY_prostates'
+        savedir='SUNY_prostates_for_clara'
 
         print("copying files")
         for pt in sorted(os.listdir(os.path.join(basepath,prostateX_n))):
             mask_name=find_file_by_annotator(os.path.join(basepath, prostateX_n,pt,'nifti','mask'))
             if mask_name==None:
+                print("mask not found for patient {}".format(pt))
                 continue
+            if anon==True:
+                anon_pt=str(random.randint(1000000000,9999999999))
+                mask_path=os.path.join(basepath,prostateX_n,pt,'nifti','mask',mask_name)
+                shutil.copy2(mask_path,os.path.join(basepath,savedir,'seg_'+anon_pt+'.nii'))
+                img_file_path=os.path.join(basepath, prostateX_n,pt,'nifti','t2','t2_resampled.nii.gz')
+                shutil.copy2(img_file_path,os.path.join(basepath,savedir,'img_'+anon_pt+'.nii.gz'))
+
             else:
                 mask_path=os.path.join(basepath,prostateX_n,pt,'nifti','mask',mask_name)
                 shutil.copy2(mask_path,os.path.join(basepath,savedir,'seg_'+pt.split('_')[0]+'.nii'))
@@ -168,19 +168,46 @@ def compress_nii(path):
         if os.path.isdir(os.path.join(path,file)):
             compress_nii(os.path.join(path,file))
 
-def find_file_by_annotator(path='/home/tom/Desktop/prostateX/PEx0000_00000000/nifti/mask'):
+def find_file_by_annotator(path='/home/tom/Desktop/prostateX/PEx0000_00000000/nifti/mask',type='wp'):
     for file in sorted(os.listdir(path)):
         #print(file)
         if len(file.split('_')) < 5:
-            if file== 'wp_bt_resampled.nii': return file
-            elif file == 'wp_mm_resampled.nii': return file
-            elif file == 'wp_ts_resampled.nii': return file
-            elif file == 'wp_pseg_resampled.nii':return file
-            elif file == 'wp_dk_resampled.nii': return file
+            if file== type+'_bt_resampled.nii': return file
+            elif file == type+'_mm_resampled.nii': return file
+            elif file == type+'_ts_resampled.nii': return file
+            elif file == type+'_pseg_resampled.nii':return file
+            elif file == type+'_dk_resampled.nii': return file
+
+def build_json_FL(val_p=0.2,center='SUNY',i_name='img',s_name='seg'):
+
+    path='/home/tom/clara_experiments/FL/dataset/ProstateX_FL_Data/SUNY'
+    json_d = {
+        "description": "Whole Prostate Segmentation",
+        "modality": {"0": "T2"},
+        "labels": {"0": "background", "1": "prostate"},
+        "name":"Prostate",
+        "reference": center,
+        "tensorImageSize": "3D",
+}
+
+    #split data into training and validation datasets
+    files=os.listdir(os.path.join(path,'Image'))
+    val_ids = [file.split('_')[1] for file in random.sample(files, int(len(files) * val_p))]
+    train_ids = [file.split('_')[1] for file in list(set(files) - set(val_ids))]
+    ID_dict={'validation':val_ids,"training":train_ids}
+
+    for sample in ID_dict.keys():
+        db_l = []
+        for id in ID_dict[sample]:
+            db_l += [{'image': os.path.join(center, 'Image', i_name+'_'+id),
+                      'label': os.path.join(center, 'Mask', s_name+'_'+id)}]
+        json_d[sample] = db_l
+
+    #saving as json file
+    with open(os.path.join(os.path.dirname(path),'Json', 'datalist.json'), 'w') as outfile:
+        json.dump(json_d, outfile, indent=2)
 
 
 if __name__=='__main__':
     c=ToClaraFormat()
-    c.ProstateX_labeling()
-    c.random_split_by_center()
-    #c.clara_filestructure()
+    build_json_FL()
